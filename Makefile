@@ -1,26 +1,20 @@
-# Change clang to gcc
-CC = clang
-CFLAGS = -O3 -Wall -I./include
-LIBS = -lm
-
-SRC_DIR = src
-OBJ_DIR = obj
-
-SRCS = $(wildcard $(SRC_DIR)/*.c)
-OBJS = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRCS))
-
-TARGET = main
+CXX = g++
+CXXFLAGS = -std=c++17 -Wall -Wextra -O2
+INCLUDES = ./include
+SRCDIR = ./src
+SRCS = $(SRCDIR)/main.cpp $(SRCDIR)/tensor.cpp $(SRCDIR)/operations.cpp $(SRCDIR)/model.cpp $(SRCDIR)/utils.cpp
+OBJS = $(SRCS:.cpp=.o)
+TARGET = myprogram
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^
 
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
-	@mkdir -p $(OBJ_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
 clean:
-	rm -rf $(OBJ_DIR) $(TARGET)
+	rm -f $(OBJS) $(TARGET)
 
 .PHONY: all clean

@@ -3,32 +3,50 @@
 
 #include <vector>
 #include <memory>
-#include <iostream>
-
-constexpr double MIN_RAND = -1.0;
-constexpr double MAX_RAND = 1.0;
+#include <random>
 
 class Tensor {
 public:
     std::vector<double> data;
+    std::vector<double> grad;
     std::vector<int> shape;
     int ndim;
-    long int total_size;
-    std::vector<double> grad;
-    bool req_grad;
+    size_t total_size;
+    bool require_grad;
 
-    Tensor(const std::vector<int>& shape, bool req_grad);
-    Tensor(const std::vector<int>& shape, bool req_grad, bool randomize);
+    // Constructors
+    Tensor(const std::vector<int>& shape, bool require_grad = false);
+    Tensor(const std::vector<int>& shape, bool require_grad, bool randomize);
 
-    void print() const;
+    // Copy constructor
+    Tensor(const Tensor& other);
 
+    // Move constructor
+    Tensor(Tensor&& other) noexcept;
+
+    // Copy assignment operator
+    Tensor& operator=(const Tensor& other);
+
+    // Move assignment operator
+    Tensor& operator=(Tensor&& other) noexcept;
+
+    // Destructor
     ~Tensor() = default;
+
+    // Utility functions
+    void print() const;
+    Tensor reshape(const std::vector<int>& new_shape) const;
+    double& operator()(const std::vector<int>& indices);
+    const double& operator()(const std::vector<int>& indices) const;
+
+    // Static factory methods
+    static std::unique_ptr<Tensor> zeros(const std::vector<int>& shape);
+    static std::unique_ptr<Tensor> ones(const std::vector<int>& shape);
+    static std::unique_ptr<Tensor> random(const std::vector<int>& shape, double min = 0.0, double max = 1.0);
+
+private:
+    void initialize(bool randomize);
+    size_t calculate_index(const std::vector<int>& indices) const;
 };
-
-std::unique_ptr<Tensor> create_tensor(const std::vector<int>& shape, bool req_grad);
-std::unique_ptr<Tensor> create_tensor_rand(const std::vector<int>& shape, bool req_grad);
-
-// Don't worry, your secret is safe! Header files are actually quite important for separating 
-// interface from implementation and for compilation efficiency. But that's a topic for another day!
 
 #endif // TENSOR_HPP

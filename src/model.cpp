@@ -1,140 +1,182 @@
+#include "../include/tensor.hpp"
 #include "../include/model.hpp"
-#include "../include/operations.hpp"
-#include "../include/utils.hpp"
-#include <iostream>
+
+#include <vector>
+#include <memory>
 #include <stdexcept>
-#include <cstring>
+#include <algorithm>
+#include <cmath>
+#include <iostream>
 
-void add_layer(Model* model, LAYER_TYPE type, int input, int output) {
-    if (model->layer_index >= model->layer_size) {
-        throw std::runtime_error("Trying to put a layer at index more than layer size: index " + 
-                                 std::to_string(model->layer_index) + ", size " + std::to_string(model->layer_size));
-    }
+std::unique_ptr<Tensor> forward(Model& model, const Tensor& input) {
+    const Tensor* x = &input;
+    // for (auto i: x->data)
+    // std::cout << x->data.size() << ' ';
+    // std::cout << "!!!";
+    std::unique_ptr<Tensor> next;
 
-    model->layers[model->layer_index].layer_type = type;
+    for (auto& layer : model.layers) {
+        layer->input = std::make_unique<Tensor>(x->shape, true);
+        layer->input->data = x->data;
 
-    if (type == LINEAR_LAYER) {
-        int shape[] = {input, output};
-        model->layers[model->layer_index].weights = create_tensor_rand(shape, 2, true);
-        int bias_shape[] = {output};
-        model->layers[model->layer_index].bias = create_tensor(bias_shape, 1, true);
-    } else {
-        model->layers[model->layer_index].weights = nullptr;
-        model->layers[model->layer_index].bias = nullptr;
-    }
-
-    model->layers[model->layer_index].output = nullptr;
-    model->layers[model->layer_index].input = nullptr;
-
-    model->layer_index++;
-}
-
-Model* create_model(int num_layers) {
-    Model* model = new Model;
-    if (model == nullptr) {
-        throw std::runtime_error("Unable to allocate enough memory when creating a model");
-    }
-    model->layer_index = 0;
-    model->layers = new Layer[num_layers]();
-    if (model->layers == nullptr) {
-        throw std::runtime_error("Unable to allocate enough memory when creating initializing " + std::to_string(num_layers) + " layers");
-    }
-    model->layer_size = num_layers;
-
-    return model;
-}
-
-Tensor* forward(Model* model, Tensor* input) {
-    Tensor* x = input;
-
-    for (int i = 0; i < model->layer_size; i++) {
-        Layer* cur_layer = &model->layers[i];
-        Tensor* next;
-
-        if (cur_layer->input) {
-            free_tensor(cur_layer->input);
-        }
-        cur_layer->input = create_tensor(x->shape, x->ndim, true);
-        std::memcpy(cur_layer->input->data, x->data, x->shape[0] * x->shape[1] * sizeof(double));
-
-        switch (cur_layer->layer_type) {
-            case LINEAR_LAYER:
-                next = matmul(x, cur_layer->weights);
-                for (int j = 0; j < next->shape[1]; j++) {
-                    next->data[j] += cur_layer->bias->data[j];
-                }
-                break;
-            case RELU_LAYER:
-                next = relu(x);
-                break;
-            case SOFTMAX_LAYER:
-                next = softmax(x);
-                break;
-            default:
-                throw std::runtime_error("INVALID INPUT FOR LAYER DURING FPASS " + std::to_string(cur_layer->layer_type));
-        }
-
-        cur_layer->output = next;
-        if (i > 0) {
-            free_tensor(x);
-        }
-        x = next;
-    }
-
-    return x;
-}
-
-void backwards(Model* model, Tensor* pred, Tensor* act) {
-    int last_layer = model->layer_size - 1;
-
-    cross_entropy_softmax_backwards(pred, pred, act);
-
-    Tensor* cur_grad = pred;
-    for (int i = last_layer; i >= 0; i--) {
-        Layer* cur_layer = &model->layers[i];
-
-        switch (cur_layer->layer_type) {
-            case SOFTMAX_LAYER:
-                break;
-            case LINEAR_LAYER:
-                matmul_d(cur_layer->input, cur_layer->weights, cur_grad);
-
-                for (int j = 0; j < cur_layer->bias->total_size; j++) {
-                    double sum = 0.0;
-                    for (int batch = 0; batch < cur_grad->shape[0]; batch++) {
-                        sum += cur_grad->grad[batch * cur_layer->bias->total_size + j];
+        switch (layer->layer_type) {
+            case LayerType::LINEAR: {
+                const int batch_size = x->shape[0];
+                const int input_size = x->shape[1];
+                const int output_size = layer->bias->shape[0];
+                next = std::make_unique<Tensor>(std::vector<int>{batch_size, output_size}, true);
+                
+                for (int b = 0; b < batch_size; ++b) {
+                    for (int j = 0; j < output_size; ++j) {
+                        double sum = 0.0;
+                        for (int i = 0; i < input_size; ++i) {
+                            sum += x->data[b * input_size + i] * layer->weights->data[i * output_size + j];
+                        }
+                        next->data[b * output_size + j] = sum + layer->bias->data[j];
                     }
-                    cur_layer->bias->grad[j] += sum;
                 }
+                break;
+            }
+            case LayerType::RELU: {
+                next = std::make_unique<Tensor>(x->shape, x->require_grad);
+                std::transform(x->data.begin(), x->data.end(), next->data.begin(),
+                               [](double val) { return std::max(0.0, val); });
+                break;
+            }
+            case LayerType::SOFTMAX: {
+                const int batch_size = x->shape[0];
+                const int class_count = x->shape[1];
+                next = std::make_unique<Tensor>(x->shape, x->require_grad);
+                
+                for (int b = 0; b < batch_size; ++b) {
+                    const double max_val = *std::max_element(x->data.begin() + b * class_count, 
+                                                             x->data.begin() + ((b + 1) * (class_count)-1));
+                    std::vector<double> exps(class_count);
+                    double sum_of_exps = 0.0;
+                    
+                    for (int j = 0; j < class_count; ++j) {
+                        exps[j] = std::exp(x->data[b * class_count + j] - max_val);
+                        sum_of_exps += exps[j];
+                    }
+                    
+                    for (int j = 0; j < class_count; ++j) {
+                        next->data[b * class_count + j] = exps[j] / sum_of_exps;
+                    }
+                }
+                break;
+            }
+        }
 
-                cur_grad = cur_layer->input;
-                break;
-            case RELU_LAYER:
-                relu_d(cur_layer->input, cur_grad);
-                cur_grad = cur_layer->input;
-                break;
-            default:
-                throw std::runtime_error("INVALID INPUT FOR BACKWARDS: " + std::to_string(cur_layer->layer_type));
+        layer->output = std::move(next);
+        x = layer->output.get();
+    }
+
+    return std::make_unique<Tensor>(*x);
+}
+// Backward function would be implemented similarly, with efficient operations
+// Helper function for element-wise multiplication
+std::vector<double> element_wise_multiply(const std::vector<double>& a, const std::vector<double>& b) {
+    std::vector<double> result(a.size());
+    std::transform(a.begin(), a.end(), b.begin(), result.begin(), std::multiplies<>());
+    return result;
+}
+
+// Helper function for matrix multiplication
+std::vector<double> matmul(const std::vector<double>& a, const std::vector<double>& b, int m, int n, int p) {
+    std::vector<double> result(m * p, 0.0);
+    for (int i = 0; i < m; ++i) {
+        for (int j = 0; j < p; ++j) {
+            for (int k = 0; k < n; ++k) {
+                result[i * p + j] += a[i * n + k] * b[k * p + j];
+            }
         }
     }
+    return result;
 }
 
-void free_layer(Layer *layer) {
-    if (layer->bias) {
-        free_tensor(layer->bias);
+// Helper function for transposing a matrix
+std::vector<double> transpose(const std::vector<double>& matrix, int rows, int cols) {
+    std::vector<double> result(rows * cols);
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) {
+            result[j * rows + i] = matrix[i * cols + j];
+        }
     }
-    if (layer->input) {
-        free_tensor(layer->input);
-    }
-    if (layer->weights) {
-        free_tensor(layer->weights);
-    }
+    return result;
 }
 
-void free_model(Model* model) {
-    for (int layer = 0; layer < model->layer_size; layer++) {
-        free_layer(&model->layers[layer]);
+void backward(Model& model, Tensor& pred, const Tensor& actual) {
+    int last_layer = model.layers.size() - 1;
+    const int batch_size = pred.shape[0];
+
+    // Compute initial gradient (assuming cross-entropy loss with softmax output)
+    std::vector<double> grad = pred.grad;
+    for (size_t i = 0; i < actual.data.size(); ++i) {
+        double targ = (pred.data[i] == actual.data[i]) ? 0.0 : 1.0;
+        pred.grad[i] += targ;
     }
-    delete[] model->layers;
-    delete model;
+
+    for (int i = last_layer; i >= 0; --i) {
+        Layer& layer = *model.layers[i];
+
+        switch (layer.layer_type) {
+            case LayerType::SOFTMAX:
+                // Softmax gradient is already computed in the initial step
+                break;
+
+            case LayerType::LINEAR: {
+                const int input_size = layer.input->shape[1];
+                const int output_size = layer.output->shape[1];
+                
+                // Compute gradient w.r.t weights
+                std::vector<double> weight_grad(layer.weights->data.size(), 0.0);
+                for (int b = 0; b < batch_size; ++b) {
+                    for (int i = 0; i < input_size; ++i) {
+                        for (int j = 0; j < output_size; ++j) {
+                            weight_grad[i * output_size + j] += layer.input->data[b * input_size + i] * grad[b * output_size + j];
+                        }
+                    }
+                }
+                
+                // Update weights
+                for (size_t j = 0; j < layer.weights->data.size(); ++j) {
+                    layer.weights->grad[j] += weight_grad[j]; // 0.01 is the learning rate
+                }
+
+                // Compute gradient w.r.t bias and update
+                std::vector<double> bias_grad(output_size, 0.0);
+                for (int b = 0; b < batch_size; ++b) {
+                    for (int j = 0; j < output_size; ++j) {
+                        bias_grad[j] += grad[b * output_size + j];
+                    }
+                }
+                for (size_t j = 0; j < layer.bias->data.size(); ++j) {
+                    layer.bias->grad[j] += bias_grad[j];
+                }
+
+                // Compute gradient w.r.t input for next layer
+                std::vector<double> input_grad(batch_size * input_size, 0.0);
+                for (int b = 0; b < batch_size; ++b) {
+                    for (int i = 0; i < input_size; ++i) {
+                        for (int j = 0; j < output_size; ++j) {
+                            input_grad[b * input_size + i] += grad[b * output_size + j] * layer.weights->data[i * output_size + j];
+                        }
+                    }
+                }
+                grad = std::move(input_grad);
+                break;
+            }
+
+            case LayerType::RELU: {
+                // ReLU backward pass
+                for (size_t j = 0; j < grad.size(); ++j) {
+                    grad[j] = (layer.input->data[j] > 0) ? grad[j] : 0;
+                }
+                break;
+            }
+        }
+
+        // Store the gradient in the input tensor of the current layer
+        layer.input->grad = grad;
+    }
 }

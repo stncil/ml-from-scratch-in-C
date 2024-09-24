@@ -1,18 +1,18 @@
 CXX = g++
 CXXFLAGS = -std=c++17 -Wall -Wextra -O2
-INCLUDES = ./include
+INCLUDES = ../include
 SRCDIR = ./src
-SRCS = $(SRCDIR)/main.cpp $(SRCDIR)/tensor.cpp $(SRCDIR)/operations.cpp $(SRCDIR)/model.cpp $(SRCDIR)/utils.cpp
+SRCS = $(SRCDIR)/main.cpp $(SRCDIR)/tensor.cpp $(SRCDIR)/model.cpp $(SRCDIR)/utils.cpp
 OBJS = $(SRCS:.cpp=.o)
 TARGET = myprogram
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^
+	$(CXX) $(CXXFLAGS) -I$(INCLUDES) -o $@ $^
 
 %.o: %.cpp
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -I$(INCLUDES) -c $< -o $@
 
 clean:
 	rm -f $(OBJS) $(TARGET)

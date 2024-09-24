@@ -41,8 +41,8 @@ void Utils::cross_entropy_softmax_backwards(Tensor& input, Tensor& output, const
     }
 }
 
-void Utils::SGD_step(Model* model, double learning_rate) {
-    for (auto& layer : model->layers) {
+void Utils::SGD_step(Model& model, double learning_rate) {
+    for (auto& layer : model.layers) {
         if (layer->layer_type == LayerType::LINEAR) {
             for (size_t j = 0; j < layer->weights->total_size; j++) {
                 layer->weights->data[j] -= layer->weights->grad[j] * learning_rate;
@@ -55,8 +55,8 @@ void Utils::SGD_step(Model* model, double learning_rate) {
     }
 }
 
-void Utils::zero_grad(Model* model) {
-    for (auto& layer : model->layers) {
+void Utils::zero_grad(Model& model) {
+    for (auto& layer : model.layers) {
         if (layer->weights) {
             std::fill(layer->weights->grad.begin(), layer->weights->grad.end(), 0.0);
         }

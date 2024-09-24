@@ -22,8 +22,8 @@ public:
 
     Layer(LayerType t, int input_size, int output_size) : layer_type(t) {
         if (t == LayerType::LINEAR) {
-            weights = std::make_unique<Tensor>(std::vector<int>{input_size, output_size}, true);
-            bias = std::make_unique<Tensor>(std::vector<int>{output_size}, true);
+            weights = std::make_unique<Tensor>(std::vector<int>{input_size, output_size}, true, true);
+            bias = std::make_unique<Tensor>(std::vector<int>{output_size}, true, true);
         }
     }
 

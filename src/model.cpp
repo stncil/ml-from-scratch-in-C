@@ -112,7 +112,7 @@ void backward(Model& model, Tensor& pred, const Tensor& actual) {
     // Compute initial gradient (assuming cross-entropy loss with softmax output)
     std::vector<double> grad = pred.grad;
     for (size_t i = 0; i < actual.data.size(); ++i) {
-        double targ = (pred.data[i] == actual.data[i]) ? 0.0 : 1.0;
+        double targ = (pred.data[i] == actual.data[i]) ? 1.0 : 0.0;
         pred.grad[i] += targ;
     }
 

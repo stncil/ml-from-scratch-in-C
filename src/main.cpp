@@ -80,7 +80,7 @@ int main() {
     const int BATCH_SIZE = 32;  // Assuming this is defined
     const int EPOCHS = 10;      // Assuming this is defined
     int num_batches = dataset.count / BATCH_SIZE;
-    double learning_rate = 0.01;
+    double learning_rate = 0.5;
 
     for (int epoch = 0; epoch < EPOCHS; epoch++) {
         double total_loss = 0.0;
@@ -101,8 +101,8 @@ int main() {
             total_loss += loss;
 
             backward(model, *pred, *y_act);
-            utility.SGD_step(&model, learning_rate);
-            utility.zero_grad(&model);
+            utility.SGD_step(model, learning_rate);
+            utility.zero_grad(model);
         }
 
         std::cout << "Epoch " << epoch + 1 << ", Average Loss: " << total_loss / num_batches << std::endl;

@@ -16,8 +16,8 @@ std::unique_ptr<Tensor> forward(Model& model, const Tensor& input) {
     std::unique_ptr<Tensor> next;
 
     for (auto& layer : model.layers) {
-        layer->input = std::make_unique<Tensor>(x->shape, true);
-        layer->input->data = x->data;
+        layer->input = std::make_unique<Tensor>(x->shape, true, true);
+        std::copy(x->data.begin(), x->data.end(), layer->input->data.begin());
 
         switch (layer->layer_type) {
             case LayerType::LINEAR: {
@@ -50,7 +50,7 @@ std::unique_ptr<Tensor> forward(Model& model, const Tensor& input) {
                 
                 for (int b = 0; b < batch_size; ++b) {
                     const double max_val = *std::max_element(x->data.begin() + b * class_count, 
-                                                             x->data.begin() + ((b + 1) * (class_count)-1));
+                                                             x->data.begin() + ((b + 1) * (class_count)));
                     std::vector<double> exps(class_count);
                     double sum_of_exps = 0.0;
                     
@@ -73,37 +73,6 @@ std::unique_ptr<Tensor> forward(Model& model, const Tensor& input) {
 
     return std::make_unique<Tensor>(*x);
 }
-// Backward function would be implemented similarly, with efficient operations
-// Helper function for element-wise multiplication
-std::vector<double> element_wise_multiply(const std::vector<double>& a, const std::vector<double>& b) {
-    std::vector<double> result(a.size());
-    std::transform(a.begin(), a.end(), b.begin(), result.begin(), std::multiplies<>());
-    return result;
-}
-
-// Helper function for matrix multiplication
-std::vector<double> matmul(const std::vector<double>& a, const std::vector<double>& b, int m, int n, int p) {
-    std::vector<double> result(m * p, 0.0);
-    for (int i = 0; i < m; ++i) {
-        for (int j = 0; j < p; ++j) {
-            for (int k = 0; k < n; ++k) {
-                result[i * p + j] += a[i * n + k] * b[k * p + j];
-            }
-        }
-    }
-    return result;
-}
-
-// Helper function for transposing a matrix
-std::vector<double> transpose(const std::vector<double>& matrix, int rows, int cols) {
-    std::vector<double> result(rows * cols);
-    for (int i = 0; i < rows; ++i) {
-        for (int j = 0; j < cols; ++j) {
-            result[j * rows + i] = matrix[i * cols + j];
-        }
-    }
-    return result;
-}
 
 void backward(Model& model, Tensor& pred, const Tensor& actual) {
     int last_layer = model.layers.size() - 1;
@@ -112,35 +81,35 @@ void backward(Model& model, Tensor& pred, const Tensor& actual) {
     // Compute initial gradient (assuming cross-entropy loss with softmax output)
     std::vector<double> grad = pred.grad;
     for (size_t i = 0; i < actual.data.size(); ++i) {
-        double targ = (pred.data[i] == actual.data[i]) ? 1.0 : 0.0;
-        pred.grad[i] += targ;
+        // pred.grad[i] = pred.data[i] - (i % pred.shape[1] == static_cast<int>(actual.data[i / pred.shape[1]]));
+        grad[i] = pred.grad[i];
     }
 
     for (int i = last_layer; i >= 0; --i) {
-        Layer& layer = *model.layers[i];
+        // Layer& layer = *model.layers[i];
 
-        switch (layer.layer_type) {
+        switch (model.layers[i]->layer_type) {
             case LayerType::SOFTMAX:
                 // Softmax gradient is already computed in the initial step
                 break;
 
             case LayerType::LINEAR: {
-                const int input_size = layer.input->shape[1];
-                const int output_size = layer.output->shape[1];
+                const int input_size = model.layers[i]->input->shape[1];
+                const int output_size = model.layers[i]->output->shape[1];
                 
                 // Compute gradient w.r.t weights
-                std::vector<double> weight_grad(layer.weights->data.size(), 0.0);
+                std::vector<double> weight_grad(model.layers[i]->weights->data.size(), 0.0);
                 for (int b = 0; b < batch_size; ++b) {
-                    for (int i = 0; i < input_size; ++i) {
+                    for (int index = 0; index < input_size; ++index) {
                         for (int j = 0; j < output_size; ++j) {
-                            weight_grad[i * output_size + j] += layer.input->data[b * input_size + i] * grad[b * output_size + j];
+                            weight_grad[index * output_size + j] += model.layers[i]->input->data[b * input_size + index] * grad[b * output_size + j];
                         }
                     }
                 }
                 
                 // Update weights
-                for (size_t j = 0; j < layer.weights->data.size(); ++j) {
-                    layer.weights->grad[j] += weight_grad[j]; // 0.01 is the learning rate
+                for (size_t j = 0; j < model.layers[i]->weights->data.size(); ++j) {
+                    model.layers[i]->weights->grad[j] += weight_grad[j]; // 0.01 is the learning rate
                 }
 
                 // Compute gradient w.r.t bias and update
@@ -150,16 +119,16 @@ void backward(Model& model, Tensor& pred, const Tensor& actual) {
                         bias_grad[j] += grad[b * output_size + j];
                     }
                 }
-                for (size_t j = 0; j < layer.bias->data.size(); ++j) {
-                    layer.bias->grad[j] += bias_grad[j];
+                for (size_t j = 0; j < model.layers[i]->bias->data.size(); ++j) {
+                    model.layers[i]->bias->grad[j] += bias_grad[j];
                 }
 
                 // Compute gradient w.r.t input for next layer
                 std::vector<double> input_grad(batch_size * input_size, 0.0);
                 for (int b = 0; b < batch_size; ++b) {
-                    for (int i = 0; i < input_size; ++i) {
+                    for (int index = 0; index < input_size; ++index) {
                         for (int j = 0; j < output_size; ++j) {
-                            input_grad[b * input_size + i] += grad[b * output_size + j] * layer.weights->data[i * output_size + j];
+                            input_grad[b * input_size + index] += grad[b * output_size + j] * model.layers[i]->weights->data[index * output_size + j];
                         }
                     }
                 }
@@ -169,14 +138,16 @@ void backward(Model& model, Tensor& pred, const Tensor& actual) {
 
             case LayerType::RELU: {
                 // ReLU backward pass
-                for (size_t j = 0; j < grad.size(); ++j) {
-                    grad[j] = (layer.input->data[j] > 0) ? grad[j] : 0;
-                }
+                // for (size_t j = 0; j < grad.size(); ++j) {
+                    std::transform(model.layers[i]->input->data.begin(), model.layers[i]->input->data.end(), grad.begin(), grad.begin(),
+               [](double input, double grad) { return input > 0 ? grad : 0; });
+               
+                // }
                 break;
             }
         }
 
         // Store the gradient in the input tensor of the current layer
-        layer.input->grad = grad;
+        model.layers[i]->input->grad = grad;
     }
 }

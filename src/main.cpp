@@ -77,10 +77,10 @@ int main() {
 
     Utils utility;
 
-    const int BATCH_SIZE = 32;  // Assuming this is defined
+    const int BATCH_SIZE = 16;  // Assuming this is defined
     const int EPOCHS = 10;      // Assuming this is defined
     int num_batches = dataset.count / BATCH_SIZE;
-    double learning_rate = 0.5;
+    double learning_rate = 0.01;
 
     for (int epoch = 0; epoch < EPOCHS; epoch++) {
         double total_loss = 0.0;
@@ -98,15 +98,18 @@ int main() {
             auto pred = forward(model, *input);
             // std::cout << pred->data.size();
             double loss = utility.cross_entropy_loss(*pred, *y_act);
+            // std::cout << "loss: " << loss << std::endl;
             total_loss += loss;
 
+            utility.cross_entropy_softmax_backwards(*pred, *pred, *y_act);
             backward(model, *pred, *y_act);
             utility.SGD_step(model, learning_rate);
             utility.zero_grad(model);
         }
 
         std::cout << "Epoch " << epoch + 1 << ", Average Loss: " << total_loss / num_batches << std::endl;
-    }
+        std::cout << "total loss: " << total_loss << std::endl;
+    // }
 
     // Evaluation
     Dataset test_dataset(21546, 784);
@@ -131,8 +134,7 @@ int main() {
 
     double accuracy = static_cast<double>(correct_predictions) / total_predictions * 100.0;
     std::cout << "Model Accuracy: " << accuracy << "%" << std::endl;
-
+    }
     return 0;
 
-    return 0;
 }
